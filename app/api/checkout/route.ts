@@ -44,15 +44,35 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount: totalAmount,
-    currency: 'usd',
-    receipt_email: buyerEmail,
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    customer_email: buyerEmail,
+    line_items: items.map((cartItem) => {
+      const product = products.find((p) => p.id === cartItem.productId)!
+      // Stripe only accepts absolute public image URLs
+      const images = product.imageUrl.startsWith('http') ? [product.imageUrl] : []
+      return {
+        price_data: {
+          currency: 'usd',
+          unit_amount: product.price,
+          product_data: {
+            name: product.name,
+            ...(images.length > 0 && { images }),
+          },
+        },
+        quantity: cartItem.quantity,
+      }
+    }),
+    success_url: `${appUrl}/buyer/checkout/success?order_id=${order.id}`,
+    cancel_url: `${appUrl}/buyer/checkout`,
     metadata: { orderId: order.id },
+    payment_intent_data: {
+      metadata: { orderId: order.id },
+      transfer_group: order.id,
+    },
   })
 
-  return Response.json({
-    clientSecret: paymentIntent.client_secret,
-    orderId: order.id,
-  })
+  return Response.json({ url: session.url, orderId: order.id })
 }

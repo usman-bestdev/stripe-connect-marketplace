@@ -1,14 +1,24 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 
-export default function SuccessPage() {
+export default async function SuccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ order_id?: string }>
+}) {
+  const { order_id } = await searchParams
+
   return (
     <div className="max-w-md mx-auto px-4 py-24 text-center space-y-4">
       <div className="text-5xl">🎉</div>
       <h1 className="text-2xl font-bold text-zinc-900">Payment confirmed!</h1>
       <p className="text-zinc-500 text-sm">
-        Your order is placed. The platform will release funds to the sellers shortly.
+        Your order is placed. The platform will release funds to the sellers
+        shortly.
       </p>
+      {order_id && (
+        <p className="text-xs text-zinc-400 font-mono">Order ID: {order_id}</p>
+      )}
       <div className="flex gap-3 justify-center pt-2">
         <Link href="/buyer">
           <Button variant="outline">Keep shopping</Button>

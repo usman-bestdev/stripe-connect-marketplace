@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { CleanDbButton } from '@/components/clean-db-button'
 
 const roles = [
   {
@@ -46,6 +47,10 @@ export default function HomePage() {
             </Card>
           </Link>
         ))}
+      </div>
+
+      <div className="mt-12 flex justify-center">
+        <CleanDbButton />
       </div>
     </div>
   )

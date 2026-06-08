@@ -13,7 +13,7 @@ export interface CheckoutRequest {
 }
 
 export interface CheckoutResponse {
-  clientSecret: string
+  url: string
   orderId: string
 }
 

@@ -23,15 +23,30 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Webhook signature verification failed' }, { status: 400 })
   }
 
-  if (event.type === 'payment_intent.succeeded') {
-    const pi = event.data.object as Stripe.PaymentIntent
-    const orderId = pi.metadata?.orderId
+  switch (event.type) {
+    case 'checkout.session.completed': {
+      const session = event.data.object as Stripe.Checkout.Session
+      const orderId = session.metadata?.orderId
+      if (orderId && session.payment_status === 'paid') {
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { status: 'paid' },
+        })
+      }
+      break
+    }
 
-    if (orderId) {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: 'paid' },
-      })
+    // Fallback for direct PaymentIntent usage (e.g. future mobile flows)
+    case 'payment_intent.succeeded': {
+      const pi = event.data.object as Stripe.PaymentIntent
+      const orderId = pi.metadata?.orderId
+      if (orderId) {
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { status: 'paid' },
+        })
+      }
+      break
     }
   }
 
