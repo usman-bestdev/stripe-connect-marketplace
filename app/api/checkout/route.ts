@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       buyerEmail,
       totalAmount,
       platformFee,
-      status: 'pending',
+      status: 'initiated',
       items: { create: orderItemsData },
     },
   })
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       }
     }),
     success_url: `${appUrl}/buyer/checkout/success?order_id=${order.id}`,
-    cancel_url: `${appUrl}/buyer/checkout`,
+    cancel_url: `${appUrl}/api/checkout/cancel?order_id=${order.id}`,
     metadata: { orderId: order.id },
     payment_intent_data: {
       metadata: { orderId: order.id },

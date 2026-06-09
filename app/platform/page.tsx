@@ -18,9 +18,11 @@ import { formatCents } from '@/lib/utils/currency'
 import { OrderWithItems } from '@/types'
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-zinc-100 text-zinc-600',
+  initiated: 'bg-yellow-100 text-yellow-700',
+  pending: 'bg-zinc-100 text-zinc-500',
   paid: 'bg-blue-100 text-blue-700',
   transferred: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-500',
 }
 
 export default function PlatformPage() {
@@ -60,7 +62,8 @@ export default function PlatformPage() {
 
   const paid = orders.filter((o) => o.status === 'paid')
   const transferred = orders.filter((o) => o.status === 'transferred')
-  const pending = orders.filter((o) => o.status === 'pending')
+  const pending = orders.filter((o) => o.status === 'initiated' || o.status === 'pending')
+  const cancelled = orders.filter((o) => o.status === 'cancelled')
 
   const totalRevenue = transferred.reduce((s, o) => s + o.totalAmount, 0)
   const totalFees = transferred.reduce((s, o) => s + o.platformFee, 0)
@@ -90,7 +93,18 @@ export default function PlatformPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="transferred">Transferred</TabsTrigger>
-          <TabsTrigger value="pending">Pending payment</TabsTrigger>
+          <TabsTrigger value="pending">
+          In progress
+          {pending.length > 0 && (
+            <Badge className="ml-1.5 h-4 px-1 text-[10px] bg-zinc-400">{pending.length}</Badge>
+          )}
+        </TabsTrigger>
+        <TabsTrigger value="cancelled">
+          Cancelled
+          {cancelled.length > 0 && (
+            <Badge className="ml-1.5 h-4 px-1 text-[10px] bg-red-400">{cancelled.length}</Badge>
+          )}
+        </TabsTrigger>
         </TabsList>
 
         <TabsContent value="paid">
@@ -120,7 +134,14 @@ export default function PlatformPage() {
           <OrderTable
             orders={pending}
             loading={loading}
-            emptyMessage="No pending orders."
+            emptyMessage="No in-progress orders."
+          />
+        </TabsContent>
+        <TabsContent value="cancelled">
+          <OrderTable
+            orders={cancelled}
+            loading={loading}
+            emptyMessage="No cancelled orders."
           />
         </TabsContent>
       </Tabs>

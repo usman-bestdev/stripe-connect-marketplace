@@ -61,25 +61,37 @@ Everything runs in a single Docker container with a SQLite database. No Redis, n
 ### Money flow
 
 ```
-Buyer pays → Stripe Checkout Session
+Buyer completes checkout form
                     │
-         checkout.session.completed
+         POST /api/checkout
+         → Order created (status: "initiated")
+         → Stripe Checkout Session created
                     │
-         Order status → "paid"   (funds held on platform)
-                    │
-         Operator reviews /platform
-                    │
-         POST /api/stripe/transfer
-                    │
-         ┌──────────┴──────────┐
-    Stripe Transfer         Stripe Transfer       (one per seller)
-    Seller A net amount     Seller B net amount
-         │                       │
-    Seller A Stripe         Seller B Stripe
-    Connect account         Connect account
+              ┌─────┴─────┐
+       Buyer pays      Buyer cancels
+              │              │
+  checkout.session     GET /api/checkout/cancel
+    .completed               │
+              │         Order status → "cancelled"
+  Order status → "paid"
+  (funds held on platform)
+              │
+  Operator reviews /platform
+              │
+  POST /api/stripe/transfer
+  → resolve settlement currency from balance_transaction
+              │
+     ┌────────┴────────┐
+Stripe Transfer    Stripe Transfer    (one per seller, source_transaction)
+Seller A net       Seller B net       (in settlement currency)
+     │                  │
+Seller A Stripe    Seller B Stripe
+Connect account    Connect account
 ```
 
-Platform fee is deducted per transfer, calculated server-side. Buyers see the full amount; sellers receive `subtotal × (1 − fee%)`.
+**Order status lifecycle:** `initiated` → `paid` → `transferred` | `cancelled`
+
+Platform fee is deducted per transfer, calculated server-side. Buyers see the full amount; sellers receive their proportional share of the settlement net (after Stripe's fee). Transfer currency is resolved dynamically from the charge's balance transaction — handling cross-currency platform accounts (e.g. GBP platform processing USD charges) transparently.
 
 ---
 
@@ -95,6 +107,9 @@ Platform fee is deducted per transfer, calculated server-side. Buyers see the fu
 | **`.dockerignore`** | Excludes `node_modules` | Without it, `COPY . .` overwrites the container's native modules (compiled for Node 20 / glibc) with the host machine's (compiled for a different version). Results in `NODE_MODULE_VERSION` mismatches at runtime. |
 | **Migrations** | `prisma migrate deploy` in `CMD` | Migrations run against the live volume-mounted database at container start, not during image build where the database file does not exist yet. |
 | **Fund release** | Explicit operator action | Funds stay on the platform until a human approves the release. This is the industry-standard pattern for dispute protection and fraud prevention. |
+| **Transfer currency** | Resolved from `balance_transaction` | `source_transaction` requires the transfer currency to match the charge's settlement currency. We expand `latest_charge.balance_transaction` on the PaymentIntent to read `bt.currency` and `bt.net`, then distribute proportionally — handles GBP/USD/EUR platform accounts without hardcoding. |
+| **Duplicate submission guard** | `useRef(false)` synchronous flag | `setLoading(true)` is async — the button's disabled state hasn't re-rendered before a second click fires. A `useRef` flag is synchronous and blocks the second submission before React batches the state update. |
+| **Order status on abandon** | Dedicated cancel URL | Stripe's `cancel_url` points to `/api/checkout/cancel?order_id=` which marks the order `cancelled` before redirecting. Orders created but never paid are now distinguishable from orders in active checkout. |
 
 ---
 
@@ -107,10 +122,11 @@ id (cuid)              id (cuid)             id (cuid)
 stripeAccountId        name                  buyerEmail
 accountName            price (cents)         totalAmount (cents)
 email                  imageUrl              platformFee (cents)
-onboardingComplete     sellerId ──┐          status
-createdAt              createdAt  │          createdAt
-    │                             │              │
-    └──── products ───────────────┘          items ────── OrderItem
+onboardingComplete     sellerId ──┐          status *
+createdAt              createdAt  │          stripePaymentIntentId
+    │                             │          createdAt
+    └──── products ───────────────┘              │
+                                             items ────── OrderItem
                                                           ──────────
                                                           id (cuid)
                                                           orderId
@@ -118,6 +134,8 @@ createdAt              createdAt  │          createdAt
                                                           quantity
                                                           amount (cents)
                                                           transferStatus
+
+* status values: initiated → paid → transferred | cancelled
 ```
 
 All monetary values are stored in **cents** (integers) — no floating-point currency arithmetic anywhere in the codebase.
@@ -275,8 +293,10 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 ```
 **Response**
 ```json
-{ "transferred": 8100 }
+{ "transferred": 8100, "currency": "gbp" }
 ```
+
+Transfer amounts are denominated in the charge's settlement currency (read from `balance_transaction`). The `currency` field reflects what was actually sent to sellers.
 
 ### Account management
 
@@ -326,15 +346,17 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 
 1. `/buyer` — product catalog across all fully onboarded sellers
 2. Add items from multiple sellers to a persistent in-memory cart
-3. `/buyer/checkout` → enter email → **Checkout with Stripe** → Stripe-hosted payment page
-4. Card number, billing, SCA handled entirely by Stripe
-5. On success → `/buyer/checkout/success` with order confirmation
+3. `/buyer/checkout` → test card panel shows above the checkout button — **copy a card number to unlock the button**
+4. Enter email → **Checkout with Stripe** → Stripe-hosted payment page
+5. Card number, billing, SCA handled entirely by Stripe
+6. On success → `/buyer/checkout/success` with order confirmation
+7. If the buyer abandons Stripe's payment page, order is marked `cancelled` and cart is restored
 
 ### Platform operator
 
 1. `/platform` — GMV overview, pending releases, platform fees earned
-2. Orders in three states: **Awaiting release** / **Transferred** / **Pending payment**
-3. **Release Funds** on any `"paid"` order → per-seller transfers execute, order advances to `"transferred"`
+2. Orders across four states: **Awaiting release** (paid) / **Transferred** / **In progress** (initiated) / **Cancelled**
+3. **Release Funds** on any `"paid"` order → per-seller transfers execute in the charge's settlement currency, order advances to `"transferred"`
 
 ---
 
@@ -342,10 +364,12 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 
 | Scenario | Number | Expiry | CVC |
 |---|---|---|---|
-| Successful payment | `4242 4242 4242 4242` | Any future | Any |
+| **Instant balance** — funds skip pending, land in available balance immediately | `4000 0000 0000 0077` | Any future | Any |
+| Standard approval — funds enter pending balance (2-day rolling) | `4242 4242 4242 4242` | Any future | Any |
+| Requires 3D Secure authentication | `4000 0025 0000 3155` | Any future | Any |
 | Card declined | `4000 0000 0000 0002` | Any future | Any |
-| Requires 3D Secure | `4000 0025 0000 3155` | Any future | Any |
 | Insufficient funds | `4000 0000 0000 9995` | Any future | Any |
+| Disputed after payment | `4000 0000 0000 1629` | Any future | Any |
 
 ---
 
@@ -442,6 +466,20 @@ Solution: `.dockerignore` excludes `node_modules` so `npm ci` inside the contain
 ### Stripe account deduplication on resume
 
 Naively, a "Resume onboarding" button that calls `POST /api/stripe/connect` creates a brand-new account each time. The correct behaviour is to generate a new account link for the existing account via `stripe.accountLinks.create({ account: existingId })`. This project exposes `GET /api/stripe/connect?account_id=` specifically for this case, completely separate from the account-creation `POST`.
+
+### Settlement currency mismatch on transfers
+
+`source_transaction` links a transfer to the specific charge that funded it, bypassing the platform's available balance requirement — the correct approach for Connect marketplaces. However, Stripe requires the transfer `currency` to match the balance transaction currency (which is the platform's settlement currency, not necessarily the checkout currency). A GBP platform account processing USD checkouts will have GBP balance transactions.
+
+Solution: expand `latest_charge.balance_transaction` on the stored `stripePaymentIntentId` to read `bt.currency` and `bt.net`. Distribute `bt.net` proportionally across sellers based on each item's USD share of the order total. This correctly handles any platform settlement currency without hardcoded assumptions.
+
+### Double-submit prevention on checkout
+
+`setLoading(true)` queues a React state update — it is asynchronous. The button's `disabled` prop doesn't re-render before a second click fires, allowing two simultaneous checkout requests which create duplicate orders. A `useRef(false)` flag is synchronous: it is set to `true` at the top of the handler before any await, blocking any concurrent invocation regardless of render timing.
+
+### Abandoned checkout tracking
+
+Stripe's `cancel_url` is a redirect URL — it fires when the buyer clicks "Back" from the hosted payment page. By routing it through `/api/checkout/cancel?order_id=`, we mark the order `cancelled` server-side before redirecting the buyer back to the cart. Orders stuck in `initiated` (Checkout Session created but payment never attempted) are distinguishable in the platform dashboard from legitimately abandoned orders.
 
 ---
 

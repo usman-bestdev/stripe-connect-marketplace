@@ -30,7 +30,12 @@ export async function POST(req: NextRequest) {
       if (orderId && session.payment_status === 'paid') {
         await prisma.order.update({
           where: { id: orderId },
-          data: { status: 'paid' },
+          data: {
+            status: 'paid',
+            stripePaymentIntentId: typeof session.payment_intent === 'string'
+              ? session.payment_intent
+              : null,
+          },
         })
       }
       break
