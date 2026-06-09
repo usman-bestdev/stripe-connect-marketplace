@@ -95,6 +95,41 @@ Platform fee is deducted per transfer, calculated server-side. Buyers see the fu
 
 ---
 
+## Stripe Connect account type
+
+This project uses **Express** accounts. Stripe offers three account types — the choice has significant product, legal, and operational implications.
+
+| | Express ✅ | Standard | Custom |
+|---|---|---|---|
+| **Onboarding** | Stripe-hosted KYC flow | Seller connects an existing Stripe account via OAuth | You collect all identity data yourself |
+| **Seller dashboard** | Stripe-hosted (Stripe-branded, limited) | Full Stripe Dashboard | None — you build it |
+| **Who handles seller support** | Stripe | Stripe | You |
+| **Payout control** | Platform controls timing | Seller controls timing | Full platform control |
+| **Compliance burden on you** | Low | Low | Very high |
+| **Time to build** | Days | Days | Months |
+| **Best for** | Most marketplaces | SaaS tools where sellers already have Stripe | Large platforms needing 100% control over UX |
+
+### Why Express is the right choice for most clients
+
+**Stripe handles the hard parts.** Identity verification, government ID checks, sanctions screening, fraud monitoring, seller support — all managed by Stripe's infrastructure. Your team ships product features instead of maintaining a compliance operation.
+
+**Sellers get a real dashboard.** They can view their payouts, download tax documents, and manage their banking details directly on Stripe. You don't have to build or support any of that.
+
+**It scales to billions.** Lyft, Shopify, Instacart, and DoorDash all use the Express/Connect model. The architecture here is production-identical to what those platforms run — the only difference is volume.
+
+### When to consider upgrading
+
+| Trigger | Consider |
+|---|---|
+| You need a fully white-labelled onboarding flow with zero Stripe branding | Custom accounts |
+| Your sellers are businesses that already have Stripe accounts | Standard accounts |
+| You need to control exactly when and how sellers are paid (e.g. escrow beyond 7 days) | Custom accounts |
+| You want to embed the seller dashboard inside your own product | Custom accounts |
+
+Custom accounts require significant ongoing investment: you become responsible for seller KYC, AML policy, fraud disputes, and regulatory compliance in every market you enter. This is appropriate for platforms at scale (e.g. $50M+ GMV) with dedicated compliance teams — not for early-stage products.
+
+---
+
 ## Technical decisions
 
 | Decision | What we chose | Why |
