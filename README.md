@@ -189,36 +189,44 @@ All monetary values are stored in **cents** (integers) — no floating-point cur
 
 ### 0 — Create a Stripe account and get your test keys
 
-**Sign up**
+#### Step 1 — Create a free Stripe account
 
 1. Go to [stripe.com](https://stripe.com) and click **Start now**
-2. Enter your email, full name, country, and password — no credit card required
+2. Enter your email, full name, country, and password
 3. Verify your email address
+4. You don't need to activate your account with banking details — test mode works immediately
 
-**Stay in test mode**
+#### Step 2 — Stay in Test Mode (the sandbox)
 
-After logging in, confirm the toggle in the top-left of the dashboard reads **Test mode**. Keys prefixed with `sk_test_` and `pk_test_` confirm you are in the sandbox — no real money moves.
+After logging in, you'll land on the Stripe Dashboard. In the top-left corner, you'll see a toggle:
 
-**Copy your API keys**
+```
+[ Test mode ]  ●  Live mode
+```
 
-1. In the left sidebar click **Developers → API keys**
-2. Copy both keys:
+Make sure **Test mode** is ON (it should be on by default for new accounts). The `sk_test_` and `pk_test_` prefixes on your keys confirm you're in the sandbox — no real money moves.
 
-| Key | Prefix | `.env` variable |
+#### Step 3 — Get your Publishable Key and Secret Key
+
+1. In the left sidebar, click **Developers**
+2. Click **API keys**
+3. You'll see two keys:
+
+| Key | Starts with | Where it goes in `.env` |
 |---|---|---|
 | Publishable key | `pk_test_...` | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
 | Secret key | `sk_test_...` | `STRIPE_SECRET_KEY` |
 
-Click **Reveal test key** next to the Secret key before copying.
+4. Click **Reveal test key** next to the Secret key to copy it
 
-**Enable Stripe Connect**
+#### Step 4 — Enable Stripe Connect (required for this project)
 
-This project uses Express connected accounts. You must activate Connect once before creating sellers:
+This project uses Express accounts (multi-seller marketplace). You need to activate Connect:
 
 1. In the sidebar go to **Connect → Get started**
 2. Choose **Build a platform or marketplace**
 3. Accept the Connect terms
-4. Under **Settings → Connect**, set a platform name (required before any connected account can be created)
+4. Under **Settings → Connect**, set a platform name (required before creating connected accounts)
 
 ---
 
