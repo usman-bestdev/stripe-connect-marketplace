@@ -187,6 +187,41 @@ All monetary values are stored in **cents** (integers) — no floating-point cur
 | Stripe CLI | Latest | Required for webhook forwarding in dev |
 | Stripe account | Test mode | Free — no real money involved |
 
+### 0 — Create a Stripe account and get your test keys
+
+**Sign up**
+
+1. Go to [stripe.com](https://stripe.com) and click **Start now**
+2. Enter your email, full name, country, and password — no credit card required
+3. Verify your email address
+
+**Stay in test mode**
+
+After logging in, confirm the toggle in the top-left of the dashboard reads **Test mode**. Keys prefixed with `sk_test_` and `pk_test_` confirm you are in the sandbox — no real money moves.
+
+**Copy your API keys**
+
+1. In the left sidebar click **Developers → API keys**
+2. Copy both keys:
+
+| Key | Prefix | `.env` variable |
+|---|---|---|
+| Publishable key | `pk_test_...` | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
+| Secret key | `sk_test_...` | `STRIPE_SECRET_KEY` |
+
+Click **Reveal test key** next to the Secret key before copying.
+
+**Enable Stripe Connect**
+
+This project uses Express connected accounts. You must activate Connect once before creating sellers:
+
+1. In the sidebar go to **Connect → Get started**
+2. Choose **Build a platform or marketplace**
+3. Accept the Connect terms
+4. Under **Settings → Connect**, set a platform name (required before any connected account can be created)
+
+---
+
 ### 1 — Configure environment
 
 ```bash
