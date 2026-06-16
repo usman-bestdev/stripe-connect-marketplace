@@ -339,12 +339,15 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 | `DELETE` | `/api/stripe/accounts?all=true` | Delete all connected accounts |
 | `DELETE` | `/api/stripe/accounts?db-only=true` | Purge local DB only, skip Stripe |
 | `DELETE` | `/api/stripe/accounts/:id` | Delete a single account |
+| `GET` | `/api/stripe/balance` | Platform Stripe balance — available and pending amounts |
+| `GET` | `/api/stripe/login-link?account_id=acct_...` | Generate a one-time Stripe Express dashboard URL for a seller |
 
 ### Products and orders
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/sellers` | Onboarded sellers with their products |
+| `GET` | `/api/sellers/:id/earnings` | Per-seller earnings breakdown — gross sales, platform fee, net received (transferred orders only) |
 | `GET` | `/api/products` | All products with seller details |
 | `POST` | `/api/products` | Create product — `{ name, price, imageUrl?, sellerId }` |
 | `GET` | `/api/products/:id` | Single product |
@@ -373,6 +376,8 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 4. Add products with name, price (USD), optional image URL
 5. **Resume onboarding** for restricted accounts — generates a new link without creating a duplicate account
 6. **Delete accounts** — bulk remove restricted or all accounts with confirmation
+7. **Balance** button on each active account — opens the seller's Stripe Express dashboard in a new tab (payouts, tax docs, banking details)
+8. `/seller/products` — earnings summary card per seller: gross sales → platform fee deducted → net received, scoped to transferred orders only
 
 ### Buyer
 
@@ -387,8 +392,9 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 ### Platform operator
 
 1. `/platform` — GMV overview, pending releases, platform fees earned
-2. Orders across four states: **Awaiting release** (paid) / **Transferred** / **In progress** (initiated) / **Cancelled**
-3. **Release Funds** on any `"paid"` order → per-seller USD transfers execute via `source_transaction`, order advances to `"transferred"`
+2. **Live Stripe balance widget** — available vs. pending platform balance with one-click refresh; no need to leave the dashboard
+3. Orders across four states: **Awaiting release** (paid) / **Transferred** / **In progress** (initiated) / **Cancelled**
+4. **Release Funds** on any `"paid"` order → per-seller USD transfers execute via `source_transaction`, order advances to `"transferred"`
 
 ---
 
@@ -430,6 +436,7 @@ stripe-connect-marketplace/
 │   └── api/
 │       ├── health/route.ts
 │       ├── sellers/route.ts
+│       ├── sellers/[id]/earnings/route.ts # Gross sales, platform fee, net — transferred orders only
 │       ├── products/route.ts
 │       ├── products/[id]/route.ts
 │       ├── orders/route.ts
@@ -440,8 +447,10 @@ stripe-connect-marketplace/
 │       └── stripe/
 │           ├── accounts/route.ts         # Bulk list + bulk delete
 │           ├── accounts/[id]/route.ts    # Single account delete
+│           ├── balance/route.ts          # Platform available + pending Stripe balance
 │           ├── connect/route.ts          # Account creation (POST) + link refresh (GET)
 │           ├── connect/callback/route.ts # Post-onboarding redirect handler
+│           ├── login-link/route.ts       # One-time Express dashboard URL for a seller
 │           ├── webhook/route.ts          # Event ingestion + signature verification
 │           └── transfer/route.ts         # Fund release
 │
