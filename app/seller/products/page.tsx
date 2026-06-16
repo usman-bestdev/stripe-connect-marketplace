@@ -11,12 +11,32 @@ import { Separator } from '@/components/ui/separator'
 import { formatCents } from '@/lib/utils/currency'
 import { SellerWithProducts, ProductItem } from '@/types'
 
+interface Earnings {
+  grossSales: number
+  platformFee: number
+  netEarned: number
+  completedOrders: number
+  feePercent: number
+}
+
 export default function SellerProductsPage() {
   const [sellers, setSellers] = useState<SellerWithProducts[]>([])
   const [selectedSellerId, setSelectedSellerId] = useState('')
   const [products, setProducts] = useState<ProductItem[]>([])
   const [form, setForm] = useState({ name: '', price: '', imageUrl: '' })
   const [loading, setLoading] = useState(false)
+  const [earnings, setEarnings] = useState<Earnings | null>(null)
+  const [earningsLoading, setEarningsLoading] = useState(false)
+
+  async function fetchEarnings(id: string) {
+    setEarningsLoading(true)
+    try {
+      const res = await fetch(`/api/sellers/${id}/earnings`)
+      if (res.ok) setEarnings(await res.json())
+    } finally {
+      setEarningsLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/sellers')
@@ -26,6 +46,7 @@ export default function SellerProductsPage() {
         if (data.length > 0) {
           setSelectedSellerId(data[0].id)
           setProducts(data[0].products)
+          fetchEarnings(data[0].id)
         }
       })
   }, [])
@@ -34,6 +55,7 @@ export default function SellerProductsPage() {
     setSelectedSellerId(id)
     const seller = sellers.find((s) => s.id === id)
     setProducts(seller?.products ?? [])
+    fetchEarnings(id)
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -101,6 +123,36 @@ export default function SellerProductsPage() {
           ))}
         </select>
       </div>
+
+      {/* Earnings summary */}
+      {earningsLoading ? (
+        <div className="h-24 rounded-xl bg-zinc-100 animate-pulse" />
+      ) : earnings && (
+        <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 bg-zinc-50 border-b border-zinc-200">
+            <p className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">
+              Earnings summary — transferred orders only
+            </p>
+          </div>
+          <div className="grid grid-cols-3 divide-x divide-zinc-100">
+            <div className="px-4 py-4">
+              <p className="text-xs text-zinc-400 mb-1">Gross sales</p>
+              <p className="text-lg font-bold text-zinc-900">{formatCents(earnings.grossSales)}</p>
+              <p className="text-xs text-zinc-400 mt-0.5">{earnings.completedOrders} order{earnings.completedOrders !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="px-4 py-4">
+              <p className="text-xs text-zinc-400 mb-1">Platform fee ({earnings.feePercent}%)</p>
+              <p className="text-lg font-bold text-red-500">− {formatCents(earnings.platformFee)}</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Deducted per transfer</p>
+            </div>
+            <div className="px-4 py-4 bg-green-50">
+              <p className="text-xs text-green-600 mb-1">You received</p>
+              <p className="text-lg font-bold text-green-700">{formatCents(earnings.netEarned)}</p>
+              <p className="text-xs text-green-500 mt-0.5">After platform fee</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Card>
         <CardHeader>

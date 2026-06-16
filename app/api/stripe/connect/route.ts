@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
 
   const account = await stripe.accounts.create({
     type: 'express',
+    country: 'US',
     email,
     capabilities: {
       card_payments: { requested: true },

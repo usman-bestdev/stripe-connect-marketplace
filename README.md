@@ -79,11 +79,10 @@ Buyer completes checkout form
   Operator reviews /platform
               │
   POST /api/stripe/transfer
-  → resolve settlement currency from balance_transaction
               │
      ┌────────┴────────┐
 Stripe Transfer    Stripe Transfer    (one per seller, source_transaction)
-Seller A net       Seller B net       (in settlement currency)
+Seller A net (USD) Seller B net (USD)
      │                  │
 Seller A Stripe    Seller B Stripe
 Connect account    Connect account
@@ -91,7 +90,7 @@ Connect account    Connect account
 
 **Order status lifecycle:** `initiated` → `paid` → `transferred` | `cancelled`
 
-Platform fee is deducted per transfer, calculated server-side. Buyers see the full amount; sellers receive their proportional share of the settlement net (after Stripe's fee). Transfer currency is resolved dynamically from the charge's balance transaction — handling cross-currency platform accounts (e.g. GBP platform processing USD charges) transparently.
+Platform fee is deducted per transfer, calculated server-side. All amounts are in USD. Buyers see the full amount; sellers receive `item_amount × (1 − fee%)` per item transferred.
 
 ---
 
@@ -142,7 +141,7 @@ Custom accounts require significant ongoing investment: you become responsible f
 | **`.dockerignore`** | Excludes `node_modules` | Without it, `COPY . .` overwrites the container's native modules (compiled for Node 20 / glibc) with the host machine's (compiled for a different version). Results in `NODE_MODULE_VERSION` mismatches at runtime. |
 | **Migrations** | `prisma migrate deploy` in `CMD` | Migrations run against the live volume-mounted database at container start, not during image build where the database file does not exist yet. |
 | **Fund release** | Explicit operator action | Funds stay on the platform until a human approves the release. This is the industry-standard pattern for dispute protection and fraud prevention. |
-| **Transfer currency** | Resolved from `balance_transaction` | `source_transaction` requires the transfer currency to match the charge's settlement currency. We expand `latest_charge.balance_transaction` on the PaymentIntent to read `bt.currency` and `bt.net`, then distribute proportionally — handles GBP/USD/EUR platform accounts without hardcoding. |
+| **Transfer currency** | Hardcoded USD | Platform account settles in USD. Transfers use `source_transaction` (charge ID from `paymentIntents.retrieve`) with `currency: 'usd'` — bypasses the platform available-balance requirement and ties each transfer to the specific charge. |
 | **Duplicate submission guard** | `useRef(false)` synchronous flag | `setLoading(true)` is async — the button's disabled state hasn't re-rendered before a second click fires. A `useRef` flag is synchronous and blocks the second submission before React batches the state update. |
 | **Order status on abandon** | Dedicated cancel URL | Stripe's `cancel_url` points to `/api/checkout/cancel?order_id=` which marks the order `cancelled` before redirecting. Orders created but never paid are now distinguishable from orders in active checkout. |
 
@@ -328,10 +327,8 @@ Releases funds for a `"paid"` order. Calculates per-seller net amounts, creates 
 ```
 **Response**
 ```json
-{ "transferred": 8100, "currency": "gbp" }
+{ "transferred": 8100 }
 ```
-
-Transfer amounts are denominated in the charge's settlement currency (read from `balance_transaction`). The `currency` field reflects what was actually sent to sellers.
 
 ### Account management
 
@@ -391,7 +388,7 @@ Transfer amounts are denominated in the charge's settlement currency (read from 
 
 1. `/platform` — GMV overview, pending releases, platform fees earned
 2. Orders across four states: **Awaiting release** (paid) / **Transferred** / **In progress** (initiated) / **Cancelled**
-3. **Release Funds** on any `"paid"` order → per-seller transfers execute in the charge's settlement currency, order advances to `"transferred"`
+3. **Release Funds** on any `"paid"` order → per-seller USD transfers execute via `source_transaction`, order advances to `"transferred"`
 
 ---
 
@@ -502,11 +499,9 @@ Solution: `.dockerignore` excludes `node_modules` so `npm ci` inside the contain
 
 Naively, a "Resume onboarding" button that calls `POST /api/stripe/connect` creates a brand-new account each time. The correct behaviour is to generate a new account link for the existing account via `stripe.accountLinks.create({ account: existingId })`. This project exposes `GET /api/stripe/connect?account_id=` specifically for this case, completely separate from the account-creation `POST`.
 
-### Settlement currency mismatch on transfers
+### source_transaction for fund release
 
-`source_transaction` links a transfer to the specific charge that funded it, bypassing the platform's available balance requirement — the correct approach for Connect marketplaces. However, Stripe requires the transfer `currency` to match the balance transaction currency (which is the platform's settlement currency, not necessarily the checkout currency). A GBP platform account processing USD checkouts will have GBP balance transactions.
-
-Solution: expand `latest_charge.balance_transaction` on the stored `stripePaymentIntentId` to read `bt.currency` and `bt.net`. Distribute `bt.net` proportionally across sellers based on each item's USD share of the order total. This correctly handles any platform settlement currency without hardcoded assumptions.
+`source_transaction` links a transfer to the specific charge that funded it, bypassing the platform's available balance requirement — the correct approach for Connect marketplaces. The platform account settles in USD, so transfers use `currency: 'usd'` with `source_transaction: chargeId`. The charge ID is resolved at transfer time via `stripe.paymentIntents.retrieve(stripePaymentIntentId)` → `pi.latest_charge`.
 
 ### Double-submit prevention on checkout
 

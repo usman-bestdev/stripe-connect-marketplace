@@ -29,52 +29,23 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Order is not in paid status' }, { status: 400 })
   }
 
-  // Resolve charge + settlement details from the stored PaymentIntent.
-  // Expanding latest_charge.balance_transaction gives us the currency the
-  // platform actually settled in (may differ from the checkout currency when
-  // the platform account uses a different default currency, e.g. GBP vs USD).
-  // source_transaction requires the transfer currency to match the balance
-  // transaction currency, so we use bt.currency and distribute bt.net
-  // proportionally across sellers.
+  // Resolve the charge ID from the stored PaymentIntent so transfers can use
+  // source_transaction — bypasses the platform available-balance requirement
+  // and ties each transfer directly to the charge that funded it.
   let chargeId: string | undefined
-  let transferCurrency = 'usd'
-  let settlementNet = order.totalAmount  // net in transfer currency; fallback to USD cents
-
   if (order.stripePaymentIntentId) {
-    const pi = await stripe.paymentIntents.retrieve(
-      order.stripePaymentIntentId,
-      { expand: ['latest_charge.balance_transaction'] }
-    )
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const charge = pi.latest_charge as any
-    if (charge && typeof charge === 'object') {
-      chargeId = charge.id as string
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bt = charge.balance_transaction as any
-      if (bt && typeof bt === 'object') {
-        transferCurrency = bt.currency as string
-        // bt.net = charge amount minus Stripe's own fee, in settlement currency.
-        // This is the actual money that landed in the platform balance.
-        settlementNet = bt.net as number
-      }
-    }
+    const pi = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId)
+    chargeId = typeof pi.latest_charge === 'string' ? pi.latest_charge : undefined
   }
 
   let transferred = 0
 
   for (const item of order.items) {
-    // Seller's share as a proportion of the gross order total, then applied to
-    // settlementNet (which is already net of Stripe's fee). Platform fee is
-    // preserved proportionally in the remainder that stays on the platform.
-    const sellerNetUsd = item.amount - calcPlatformFee(item.amount)
-    const sellerRatio = order.totalAmount > 0 ? sellerNetUsd / order.totalAmount : 0
-    const sellerAmount = Math.floor(settlementNet * sellerRatio)
-
-    if (sellerAmount <= 0) continue
+    const sellerAmount = item.amount - calcPlatformFee(item.amount)
 
     await stripe.transfers.create({
       amount: sellerAmount,
-      currency: transferCurrency,
+      currency: 'usd',
       destination: item.product.seller.stripeAccountId,
       transfer_group: orderId,
       ...(chargeId ? { source_transaction: chargeId } : {}),
@@ -95,5 +66,5 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  return Response.json({ transferred, currency: transferCurrency })
+  return Response.json({ transferred })
 }

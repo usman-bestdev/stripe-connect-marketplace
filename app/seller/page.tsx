@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { PlusCircle, ExternalLink, RefreshCw, Trash2, AlertTriangle, DatabaseZap, CloudDownload, Banknote } from 'lucide-react'
+import { PlusCircle, ExternalLink, RefreshCw, Trash2, AlertTriangle, DatabaseZap, CloudDownload, LayoutDashboard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -414,115 +414,34 @@ function CleanDbDialog({ onCleaned }: { onCleaned: () => void }) {
   )
 }
 
-function PayoutDialog({ accountId }: { accountId: string }) {
-  const [open, setOpen] = useState(false)
-  const [balance, setBalance] = useState<{ amount: number; currency: string }[]>([])
-  const [balanceLoading, setBalanceLoading] = useState(false)
+function StripeDashboardButton({ accountId }: { accountId: string }) {
   const [loading, setLoading] = useState(false)
 
-  async function fetchBalance() {
-    setBalanceLoading(true)
-    try {
-      const res = await fetch(`/api/stripe/payout?account_id=${accountId}`)
-      const data = await res.json()
-      if (res.ok) setBalance(data.available)
-      else toast.error(data.error ?? 'Failed to load balance')
-    } catch {
-      toast.error('Failed to load balance')
-    } finally {
-      setBalanceLoading(false)
-    }
-  }
-
-  function handleOpenChange(v: boolean) {
-    setOpen(v)
-    if (v) fetchBalance()
-    else setBalance([])
-  }
-
-  async function handlePayout() {
+  async function openDashboard() {
     setLoading(true)
     try {
-      const res = await fetch('/api/stripe/payout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accountId }),
-      })
+      const res = await fetch(`/api/stripe/login-link?account_id=${accountId}`)
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Payout failed')
-      const summary = data.payouts
-        .map((p: { amount: number; currency: string }) =>
-          `${(p.amount / 100).toFixed(2)} ${p.currency.toUpperCase()}`
-        )
-        .join(', ')
-      toast.success(`Payout initiated — ${summary}`)
-      setOpen(false)
+      if (!res.ok) throw new Error(data.error ?? 'Failed to generate link')
+      window.open(data.url, '_blank')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Payout failed')
+      toast.error(err instanceof Error ? err.message : 'Could not open dashboard')
     } finally {
       setLoading(false)
     }
   }
 
-  const totalAvailable = balance.reduce((s, b) => s + b.amount, 0)
-
   return (
-    <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1.5 text-xs h-7"
-        onClick={() => handleOpenChange(true)}
-      >
-        <Banknote size={12} />
-        Payout
-      </Button>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Initiate payout</DialogTitle>
-            <DialogDescription>
-              Sends available balance from this seller&apos;s Stripe account to their bank.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            {balanceLoading ? (
-              <div className="h-14 rounded-lg bg-zinc-100 animate-pulse" />
-            ) : balance.length === 0 ? (
-              <p className="text-sm text-zinc-400 text-center py-4">No available balance.</p>
-            ) : (
-              <div className="rounded-lg border divide-y">
-                {balance.map((b) => (
-                  <div key={b.currency} className="flex items-center justify-between px-4 py-3">
-                    <span className="text-sm text-zinc-500 uppercase">{b.currency}</span>
-                    <span className={`text-sm font-semibold ${b.amount > 0 ? 'text-green-700' : 'text-zinc-400'}`}>
-                      {(b.amount / 100).toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setOpen(false)}
-                disabled={loading}
-              >
-                Cancel
-              </Button>
-              <Button
-                className="flex-1"
-                disabled={loading || balanceLoading || totalAvailable <= 0}
-                onClick={handlePayout}
-              >
-                {loading ? 'Processing…' : 'Initiate payout'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+    <Button
+      variant="ghost"
+      size="sm"
+      className="gap-1.5 text-xs h-7"
+      disabled={loading}
+      onClick={openDashboard}
+    >
+      <LayoutDashboard size={12} />
+      {loading ? 'Opening…' : 'Balance'}
+    </Button>
   )
 }
 
@@ -721,7 +640,7 @@ export default function SellerPage() {
                       )}
                       {!account.restricted && (
                         <>
-                          <PayoutDialog accountId={account.id} />
+                          <StripeDashboardButton accountId={account.id} />
                           <a
                             href="/seller/products"
                             className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
